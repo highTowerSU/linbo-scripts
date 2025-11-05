@@ -15,7 +15,7 @@ Synchronisieren von Rechnergruppen oder das Auswerten der `devices.csv`.
 
 * linuxmuster.net-Server mit LINBO (getestet ab v7)
 * funktionierender `linbo-remote`-Aufruf und eingerichtete Rechnergruppen (`linux-efi`, `linux-efi-p6012`)
-* Log-Verzeichnisse `/var/log/sn.antoniuskolleg.de/` (für `sync_pcs.sh`) und `/var/log/linuxmuster/linbo/`
+* Log-Verzeichnisse `/var/log/linbo-scripts/` (Standard für `sync_pcs.sh`, per `LOG_DIR` anpassbar) und `/var/log/linuxmuster/linbo/`
 * `wakeonlan`-Wrapper (z. B. `ssh-wol`) im `PATH`, wenn WOL-Pakete über Unifi gesendet werden
 * Zugriff auf `/etc/linuxmuster/sophomorix/default-school/devices.csv`
 
@@ -25,7 +25,7 @@ Synchronisieren von Rechnergruppen oder das Auswerten der `devices.csv`.
 
 Automatisiert den täglichen Sync der Rechnergruppen `linux-efi` und `linux-efi-p6012`. Das Skript
 
-1. schreibt einen Startblock ins Log `/var/log/sn.antoniuskolleg.de/sync_pcs.sh`,
+1. schreibt einen Startblock ins Log `${LOG_DIR:-/var/log/linbo-scripts}/sync_pcs.sh`,
 2. setzt den `PATH`, damit `ssh-wol` für Wake-on-LAN verfügbar ist,
 3. startet für beide Gruppen `linbo-remote` mit folgenden Parametern:
    * `-b 30` – verzögert WOL-Signale um 30 s je Gerät,
@@ -47,7 +47,7 @@ Anpassungen:
 
 * **Rechnergruppen**: In `linbo-do` die `-g`-Parameter auf die eigenen Geräte-Gruppen ändern.
 * **Image-Index**: `sync:1` bezieht sich auf den ersten `[OS]`-Block der jeweiligen `start.conf`.
-* **Logpfad**: Bei Bedarf Verzeichnis in den `echo`-/`tee`-Zeilen anpassen.
+* **Logpfad**: Über die Umgebungsvariable `LOG_DIR` (Standard: `/var/log/linbo-scripts`) anpassen.
 
 ## `lm-devices`
 
