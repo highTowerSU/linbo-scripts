@@ -18,6 +18,19 @@ QUIET=0
 SHOW_VERSION=0
 ONLY_OUTDATED=0
 IMAGE="$DEFAULT_IMAGE"
+SHOW_SYNC=0
+SYNC_OLDER_THAN=""
+SYNC_DATE_THRESHOLD=""
+
+format_timestamp() {
+    local raw="$1"
+
+    if [[ $raw =~ ^[0-9]{14}$ ]]; then
+        date -d "${raw:0:4}-${raw:4:2}-${raw:6:2} ${raw:8:2}:${raw:10:2}:${raw:12:2}" '+%Y-%m-%d %H:%M:%S' 2>/dev/null && return
+    fi
+
+    echo "$raw"
+}
 
 # Farben
 GREEN='\033[0;32m'
@@ -35,12 +48,28 @@ while [[ $# -gt 0 ]]; do
         --all|--hidden) SHOW_HIDDEN=1 ;;
         --quiet) QUIET=1 ;;
         --show-version) SHOW_VERSION=1 ;;
+        --show-sync) SHOW_SYNC=1 ;;
+        --sync-older-than)
+            SHOW_SYNC=1
+            SYNC_OLDER_THAN="$2"
+            shift
+            ;;
         --outdated) ONLY_OUTDATED=1 ;;
         --image) IMAGE="$2"; shift ;;
-        *) echo "Usage: $0 [--hosts|--rooms|--types|--ips] [--room ROOM] [--type TYPE] [--all|--hidden] [--image IMAGE] [--show-version] [--outdated] [--quiet]"; exit 1 ;;
+        *) echo "Usage: $0 [--hosts|--rooms|--types|--ips] [--room ROOM] [--type TYPE] [--all|--hidden] [--image IMAGE] [--show-version] [--show-sync] [--sync-older-than DATE] [--outdated] [--quiet]"; exit 1 ;;
     esac
     shift
 done
+
+# ===============================
+# Sync-Datum validieren
+# ===============================
+if [[ -n "$SYNC_OLDER_THAN" ]]; then
+    if ! SYNC_DATE_THRESHOLD=$(date -d "$SYNC_OLDER_THAN" +%s 2>/dev/null); then
+        echo "Ungültiges Datum für --sync-older-than: '$SYNC_OLDER_THAN'. Erwartetes Format z.B. '2024-01-31'."
+        exit 1
+    fi
+fi
 
 # ===============================
 # Image-Timestamp aus .info nur prüfen, wenn gewünscht
@@ -117,6 +146,69 @@ for HOST in $DEVICES; do
         if [[ $ONLY_OUTDATED -eq 1 && "$IMAGE_TS_IN_LOG" == "$CURRENT_IMAGE_TIMESTAMP" ]]; then
             continue
         fi
+    fi
+
+    if [[ $SHOW_SYNC -eq 1 ]]; then
+        LAST_SYNC=""
+        LAST_SYNC_EPOCH=""
+        STATUS_FILE="$LINBO_LOG/${HOST}_image.status"
+
+        if [[ -f "$STATUS_FILE" ]]; then
+            RAW_TS=$(grep -oP 'lastsync="([0-9]{14})"' "$STATUS_FILE" | tail -n1 | sed 's/.*="//;s/"$//')
+            if [[ -n "$RAW_TS" ]]; then
+                LAST_SYNC=$(format_timestamp "$RAW_TS")
+            fi
+
+            if [[ -z "$LAST_SYNC" ]]; then
+                RAW_TS=$(grep -oP 'synctime="([0-9]{14})"' "$STATUS_FILE" | tail -n1 | sed 's/.*="//;s/"$//')
+                if [[ -n "$RAW_TS" ]]; then
+                    LAST_SYNC=$(format_timestamp "$RAW_TS")
+                fi
+            fi
+        fi
+
+        shopt -s nullglob
+        SYNC_FILES=("$LINBO_LOG"/${HOST}*.log)
+        shopt -u nullglob
+
+        if [[ -z "$LAST_SYNC" && ${#SYNC_FILES[@]} -gt 0 ]]; then
+            RAW_TS=$(grep -hEi 'sync' "${SYNC_FILES[@]}" 2>/dev/null | \
+                grep -oP '[0-9]{4}-[0-9]{2}-[0-9]{2}[ T][0-9]{2}:[0-9]{2}:[0-9]{2}' | tail -n1)
+            if [[ -n "$RAW_TS" ]]; then
+                LAST_SYNC=${RAW_TS//T/ }
+            fi
+        fi
+
+        if [[ -z "$LAST_SYNC" && ${#SYNC_FILES[@]} -gt 0 ]]; then
+            RAW_TS=$(grep -hEi 'sync' "${SYNC_FILES[@]}" 2>/dev/null | \
+                grep -oP '[0-9]{14}' | tail -n1)
+            if [[ -n "$RAW_TS" ]]; then
+                LAST_SYNC=$(format_timestamp "$RAW_TS")
+            fi
+        fi
+
+        if [[ -n "$LAST_SYNC" ]]; then
+            LAST_SYNC_EPOCH=$(date -d "$LAST_SYNC" +%s 2>/dev/null || echo "")
+        fi
+
+        if [[ -n "$SYNC_DATE_THRESHOLD" && -n "$LAST_SYNC_EPOCH" && $LAST_SYNC_EPOCH -ge $SYNC_DATE_THRESHOLD ]]; then
+            continue
+        fi
+
+        SYNC_DISPLAY="${LAST_SYNC:-"keine sync info"}"
+        if [[ -n "$SYNC_DATE_THRESHOLD" ]]; then
+            if [[ -n "$LAST_SYNC_EPOCH" ]]; then
+                if (( LAST_SYNC_EPOCH < SYNC_DATE_THRESHOLD )); then
+                    SYNC_DISPLAY="${RED}${SYNC_DISPLAY}${NC}"
+                else
+                    SYNC_DISPLAY="${GREEN}${SYNC_DISPLAY}${NC}"
+                fi
+            else
+                SYNC_DISPLAY="${RED}${SYNC_DISPLAY}${NC}"
+            fi
+        fi
+
+        OUT_STR="$OUT_STR | letzter Sync: $SYNC_DISPLAY"
     fi
 
     echo -e "$OUT_STR"
