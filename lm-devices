@@ -38,8 +38,12 @@ format_timestamp() {
 
 # Farben
 GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
 RED='\033[0;31m'
 NC='\033[0m'
+
+THREE_DAYS_SECONDS=$((3 * 24 * 60 * 60))
+FOUR_WEEKS_SECONDS=$((4 * 7 * 24 * 60 * 60))
 
 # ===============================
 # Parameter auswerten
@@ -135,7 +139,7 @@ fi
 # ===============================
 for HOST in "${HOSTS[@]}"; do
     HOST_PADDED=$(printf "%-${HOST_COL_WIDTH}s" "$HOST")
-
+    IMAGE_OUTDATED=0
     if [[ $SHOW_VERSION -eq 1 || $ONLY_OUTDATED -eq 1 || $SHOW_SYNC -eq 1 ]]; then
         OUT_STR="$HOST_PADDED"
     else
@@ -160,6 +164,7 @@ for HOST in "${HOSTS[@]}"; do
         # Veraltet prüfen & Farbe setzen
         if [[ "$IMAGE_TS_IN_LOG" != "$CURRENT_IMAGE_TIMESTAMP" ]]; then
             VERSION_DISPLAY="${RED}${IMAGE_TS_IN_LOG:-"keine info"}${NC}"  # rot für veraltet
+            IMAGE_OUTDATED=1
         else
             VERSION_DISPLAY="${GREEN}${IMAGE_TS_IN_LOG}${NC}"  # grün für aktuell
         fi
@@ -227,19 +232,30 @@ for HOST in "${HOSTS[@]}"; do
         fi
 
         SYNC_DISPLAY="${LAST_SYNC:-"keine sync info"}"
-        if [[ -n "$SYNC_DATE_THRESHOLD" ]]; then
-            if [[ -n "$LAST_SYNC_EPOCH" ]]; then
-                if (( LAST_SYNC_EPOCH < SYNC_DATE_THRESHOLD )); then
-                    SYNC_DISPLAY="${RED}${SYNC_DISPLAY}${NC}"
-                else
-                    SYNC_DISPLAY="${GREEN}${SYNC_DISPLAY}${NC}"
-                fi
+
+        SYNC_COLOR="$GREEN"
+        if [[ -z "$LAST_SYNC_EPOCH" ]]; then
+            SYNC_COLOR="$RED"
+        else
+            CURRENT_TIME=$(date +%s)
+            if (( CURRENT_TIME < LAST_SYNC_EPOCH )); then
+                AGE=0
             else
-                SYNC_DISPLAY="${RED}${SYNC_DISPLAY}${NC}"
+                AGE=$((CURRENT_TIME - LAST_SYNC_EPOCH))
+            fi
+
+            if (( IMAGE_OUTDATED == 1 || AGE >= FOUR_WEEKS_SECONDS )); then
+                SYNC_COLOR="$RED"
+            elif (( AGE >= THREE_DAYS_SECONDS )); then
+                SYNC_COLOR="$YELLOW"
+            else
+                SYNC_COLOR="$GREEN"
             fi
         fi
 
-        OUT_STR+=" | letzter Sync: $SYNC_DISPLAY"
+        SYNC_DISPLAY="${SYNC_COLOR}${SYNC_DISPLAY}${NC}"
+
+        OUT_STR="$OUT_STR | letzter Sync: $SYNC_DISPLAY"
     fi
 
     echo -e "$OUT_STR"
