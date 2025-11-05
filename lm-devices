@@ -1,0 +1,123 @@
+#!/bin/bash
+
+# ==========================================
+# lm-devices: Liste von Rechnern aus sophomorix/devices.csv
+# Erweiterung: Image-Version anzeigen, veraltete Hosts markieren
+# ==========================================
+
+CSV="/etc/linuxmuster/sophomorix/default-school/devices.csv"
+HIDDEN="byod|ipad|server|admin|switch|router|printer|staffcomputer|iponly|shelly"
+LINBO_LOG="/var/log/linuxmuster/linbo"
+DEFAULT_IMAGE="UbuntuV2"
+
+MODE="hosts"
+ROOM=""
+TYPE=""
+SHOW_HIDDEN=0
+QUIET=0
+SHOW_VERSION=0
+ONLY_OUTDATED=0
+IMAGE="$DEFAULT_IMAGE"
+
+# Farben
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+# ===============================
+# Parameter auswerten
+# ===============================
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --hosts|--rooms|--types|--ips) MODE="${1#--}" ;;
+        --room) ROOM="$2"; shift ;;
+        --type) TYPE="$2"; shift ;;
+        --all|--hidden) SHOW_HIDDEN=1 ;;
+        --quiet) QUIET=1 ;;
+        --show-version) SHOW_VERSION=1 ;;
+        --outdated) ONLY_OUTDATED=1 ;;
+        --image) IMAGE="$2"; shift ;;
+        *) echo "Usage: $0 [--hosts|--rooms|--types|--ips] [--room ROOM] [--type TYPE] [--all|--hidden] [--image IMAGE] [--show-version] [--outdated] [--quiet]"; exit 1 ;;
+    esac
+    shift
+done
+
+# ===============================
+# Image-Timestamp aus .info nur prüfen, wenn gewünscht
+# ===============================
+if [[ $SHOW_VERSION -eq 1 || $ONLY_OUTDATED -eq 1 ]]; then
+    IMAGE_FOLDER=$(basename "$IMAGE" .qcow2)
+    IMAGE_FILE="$IMAGE_FOLDER.qcow2"
+    IMAGE_INFO="/srv/linbo/images/$IMAGE_FOLDER/$IMAGE_FOLDER.qcow2.info"
+
+    if [[ -f "$IMAGE_INFO" ]]; then
+        # Timestamp aus info-Datei extrahieren
+        CURRENT_IMAGE_TIMESTAMP=$(grep -oP 'timestamp="([0-9]+)"' "$IMAGE_INFO" | head -n1 | sed 's/timestamp="//;s/"//')
+
+        if [[ $QUIET -eq 0 ]]; then
+          echo "Die aktuelle Imageversion '${IMAGE_FOLDER}' ist: $CURRENT_IMAGE_TIMESTAMP"
+        fi
+
+        if [[ -z "$CURRENT_IMAGE_TIMESTAMP" ]]; then
+            echo "Kein Timestamp für Image $IMAGE_FILE in $IMAGE_INFO gefunden!"
+            exit 1
+        fi
+    else
+        echo "Image info file für $IMAGE_FOLDER nicht gefunden!"
+        exit 1
+    fi
+fi
+
+# ===============================
+# Devices filtern
+# ===============================
+if [[ $SHOW_HIDDEN -eq 0 ]]; then
+    FILTER="(^(#|$))|${HIDDEN}"
+else
+    FILTER="^(#|$)"
+fi
+
+DEVICES=$(grep -viE "$FILTER" "$CSV" \
+    | awk -F';' -v room="$ROOM" -v type="$TYPE" '
+        !/^#/ && NF {
+            if(room!="" && $1!=room) next
+            if(type!="" && $10!=type) next
+            print $2
+        }')
+
+# ===============================
+# Ausgabe
+# ===============================
+for HOST in $DEVICES; do
+    OUT_STR="$HOST"
+
+    if [[ $SHOW_VERSION -eq 1 || $ONLY_OUTDATED -eq 1 ]]; then
+        LOG_FILE="$LINBO_LOG/${HOST}_image.status"
+
+        if [[ -f "$LOG_FILE" ]]; then
+            # Letzte Zeile mit dem Image-Namen
+            LINE=$(grep "$IMAGE_FILE" "$LOG_FILE" | tail -n1)
+            if [[ -n "$LINE" ]]; then
+                IMAGE_TS_IN_LOG=$(echo "$LINE" | awk -F'"' '{print $2}') # Version im Log
+            else
+                IMAGE_TS_IN_LOG=""
+            fi
+        else
+            IMAGE_TS_IN_LOG=""
+        fi
+
+        # Veraltet prüfen & Farbe setzen
+        if [[ "$IMAGE_TS_IN_LOG" != "$CURRENT_IMAGE_TIMESTAMP" ]]; then
+            OUT_STR="$HOST | ${RED}${IMAGE_TS_IN_LOG:-"keine info"}${NC}"  # rot für veraltet
+        else
+            OUT_STR="$HOST | ${GREEN}${IMAGE_TS_IN_LOG}${NC}"  # grün für aktuell
+        fi
+
+        # ONLY_OUTDATED filtern
+        if [[ $ONLY_OUTDATED -eq 1 && "$IMAGE_TS_IN_LOG" == "$CURRENT_IMAGE_TIMESTAMP" ]]; then
+            continue
+        fi
+    fi
+
+    echo -e "$OUT_STR"
+done | sort -u

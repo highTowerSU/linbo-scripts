@@ -1,0 +1,83 @@
+Klar – ich zerlege dir genau, was deine `linbo-remote`-Aufrufe tun und wofür die Parameter stehen. Ich gehe dabei explizit auf die von dir verwendeten Optionen und Befehle ein.
+
+# Was macht deine Funktion `linbo-do`?
+
+```bash
+/usr/sbin/linbo-remote -b 30 -u -g linux-efi      -w 60 -n -p sync:1,halt
+/usr/sbin/linbo-remote -b 30 -u -g linux-efi-p6012 -w 60 -n -p sync:1,halt
+```
+
+## Die Optionen
+
+* `-g linux-efi` / `-g linux-efi-p6012`
+  Ziel ist **jeweils die ganze Rechnergruppe** „linux-efi“ bzw. „linux-efi-p6012“. `-g` sendet die Befehle an alle Mitglieder der Gruppe. ([wiki.linuxmuster.net][1])
+
+* `-b 30`
+  **Pausiert 30 Sekunden zwischen den WOL-Paketen** an die einzelnen Clients (benötigt i. d. R. zusammen mit `-g` und `-w`). Praktisch, um große Räume „gestaffelt“ zu wecken und Switches nicht zu fluten. ([wiki.linuxmuster.net][1])
+
+* `-w 60`
+  **Wartet 60 Sekunden nach dem Wecken**, bevor die Kommandos abgearbeitet werden. Hinweis aus der Doku: Mit `-w` werden temporär Autopartition/Autoformat/AutoInitcache/Autostart aus der `start.conf` deaktiviert – so greift wirklich dein Remotebefehl. ([wiki.linuxmuster.net][1])
+
+* `-p …`
+  **Bereitet die Befehle für den *nächsten* Boot** des Clients vor („prepare“). Die Kommandos werden pro Client abgelegt (unter `/srv/linbo/linbocmd`) und dann beim nächsten Start abgearbeitet – unabhängig davon, wann der Client tatsächlich bootet. Beispiel in der offiziellen Anleitung: `linbo-remote -i r100-pc01 -p partition,format,initcache:torrent,sync:1,start:1`. ([docs.linuxmuster.net][2])
+
+> Unterschied `-c` vs. `-p`: `-c` führt sofort im laufenden Remote-Modus/Screen aus (typisch zusammen mit WOL und `-w`), `-p` schreibt den Auftrag „auf Vorrat“ für den nächsten Boot. Für verlässliche Massenjobs ist `-p` oft robuster. ([docs.linuxmuster.net][2])
+
+* `-u` und `-n`
+  **Diese beiden Schalter sind in den öffentlich dokumentierten `linbo-remote`-Optionen nicht standardisiert.** Vermutlich stammen sie aus deiner (angepassten) Version/Wrapper-Skriptumgebung – du hast ja oben den `PATH` auf `ssh-wol` erweitert. Ich möchte hier nichts Falsches behaupten: Bitte einmal `linbo-remote -h` auf *deinem* Server ausführen oder in `/usr/sbin/linbo-remote` nach `getopts`/`case` schauen – dort ist die lokale Bedeutung sauber ersichtlich. (In den offiziellen Wikis/Docs tauchen `-u`/`-n` nicht auf.) ([wiki.linuxmuster.net][1])
+
+## Die Befehlsliste nach `-p`
+
+* `sync:1`
+  **Synchronisiert das Betriebssystem mit Index 1** aus der `start.conf` (nicht die Partitionsnummer!). Das Image aus dem Servercache wird auf die entsprechende(n) Partition(en) geschrieben (bei LINBO 4 als qcow2; optional via Torrent). ([linuxmuster.net][3])
+
+* `halt`
+  **Fährt den Client am Ende herunter.** (Wenn du statt `halt` `start:1` anfügst, würde das OS 1 nach dem Sync direkt gebootet.) ([wiki.linuxmuster.net][1])
+
+## Warum filterst du danach die Ausgabe?
+
+```bash
+linbo-do 2>&1 | grep -E "(-fj-|magic)" # remove Warning
+```
+
+* Du leitest STDOUT+STDERR in `grep` und **lässt nur Zeilen mit „magic“ (WOL-Magic-Packet) oder „-fj-“** (typische LINBO-Log-Marker) durch – so **blendest du Warnungen/Noise** aus und protokollierst das Wesentliche (WOL-Versand etc.).
+
+## Der Wochentagsblock unten
+
+```bash
+weekday="$(date "+%u")"
+if [ "${weekday}" -lt 6 -a "${weekday}" -gt 1 ]; then
+  sleep 3600
+  grep -vE "($(date -d "yesterday 13:00" "+%Y%m%d")|$(date "+%Y%m%d")|ubuntu.qcow|win10)" \
+    /srv/linbo/log/*_image.status | grep -v "linux-efi-"
+fi
+```
+
+* `date +%u` → 1=Montag … 7=Sonntag. Bedingung **nur Di–Fr**.
+* `sleep 3600` → **1 Stunde warten** (vermutlich Zeitpuffer für die Sync-Welle).
+* Danach **prüfst du `_image.status`-Logs** und **schließt** per `grep -vE` **gestern/heute** (nach 13:00), **bestimmte Images** (`ubuntu.qcow`, `win10`) und **HWK-Präfix `linux-efi-`** aus. Ergebnis: *vermutlich* „alte/offene“ Statuszeilen anderer Gruppen/Images herausfischen.
+
+---
+
+## Kurzform (was deine beiden Aufrufe netto bewirken)
+
+* Wecken nacheinander (gestaffelt, `-b 30`) aller Clients der Gruppen `linux-efi` und `linux-efi-p6012`.
+* 60 s warten, bis die Geräte im LINBO-Menü sind (`-w 60`).
+* Für den **nächsten Boot** je Client: **OS 1 synchronisieren** und **danach herunterfahren** (`-p sync:1,halt`).
+
+Das ist ein sauberer Ansatz für planbare Rollouts am Vormittag/Nachmittag.
+
+---
+
+### Noch zwei praxisnahe Hinweise
+
+1. **OS-Index sicher checken:** In der `start.conf.<HWK>` bestimmt die Reihenfolge der `[OS]`-Blöcke den Index. `sync:1` bezieht sich genau darauf (nicht auf Partitionen). ([linuxmuster.net][3])
+
+2. **Wann lieber `-p` statt `-c`:** Wenn Clients unterschiedlich lange bis ins LINBO booten (UEFI-Reboots, Firmware-Delays), ist `-p` robuster, weil der Auftrag persistent bis zum nächsten Boot liegen bleibt. ([linuxmuster.net][4])
+
+Wenn du magst, schaue ich mit dir kurz in **dein** `/usr/sbin/linbo-remote` (oder `linbo-remote -h`) und trage die lokale Bedeutung von `-u`/`-n` nach – dann ist die Doku für euer Setup komplett.
+
+[1]: https://wiki.linuxmuster.net/community/anwenderwiki%3Alinbo%3Alinbo_remote "anwenderwiki:linbo:linbo_remote [CommunityWiki]"
+[2]: https://docs.linuxmuster.net/en/stable/getting-started/linuxclients/rollout.html?utm_source=chatgpt.com "Clients synchronisieren — linuxmuster.net 7.0.0 documentation"
+[3]: https://ask.linuxmuster.net/t/linbo-remote-syntax-fuer-erweiterte-partition/1924?utm_source=chatgpt.com "Linbo-remote - Syntax für erweiterte Partition? - ask.linuxmuster.net"
+[4]: https://ask.linuxmuster.net/t/linbo-remote-klappt-nicht-so-ganz/7315?utm_source=chatgpt.com "Linbo remote klappt nicht so ganz - Server - linuxmuster.net"
