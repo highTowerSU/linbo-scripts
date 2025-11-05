@@ -29,6 +29,10 @@ format_timestamp() {
         date -d "${raw:0:4}-${raw:4:2}-${raw:6:2} ${raw:8:2}:${raw:10:2}:${raw:12:2}" '+%Y-%m-%d %H:%M:%S' 2>/dev/null && return
     fi
 
+    if [[ $raw =~ ^[0-9]{12}$ ]]; then
+        date -d "${raw:0:4}-${raw:4:2}-${raw:6:2} ${raw:8:2}:${raw:10:2}:00" '+%Y-%m-%d %H:%M:%S' 2>/dev/null && return
+    fi
+
     echo "$raw"
 }
 
@@ -154,13 +158,20 @@ for HOST in $DEVICES; do
         STATUS_FILE="$LINBO_LOG/${HOST}_image.status"
 
         if [[ -f "$STATUS_FILE" ]]; then
-            RAW_TS=$(grep -oP 'lastsync="([0-9]{14})"' "$STATUS_FILE" | tail -n1 | sed 's/.*="//;s/"$//')
+            RAW_TS=$(grep -oP 'lastsync="([0-9]{12,14})"' "$STATUS_FILE" | tail -n1 | sed 's/.*="//;s/"$//')
             if [[ -n "$RAW_TS" ]]; then
                 LAST_SYNC=$(format_timestamp "$RAW_TS")
             fi
 
             if [[ -z "$LAST_SYNC" ]]; then
-                RAW_TS=$(grep -oP 'synctime="([0-9]{14})"' "$STATUS_FILE" | tail -n1 | sed 's/.*="//;s/"$//')
+                RAW_TS=$(grep -oP 'synctime="([0-9]{12,14})"' "$STATUS_FILE" | tail -n1 | sed 's/.*="//;s/"$//')
+                if [[ -n "$RAW_TS" ]]; then
+                    LAST_SYNC=$(format_timestamp "$RAW_TS")
+                fi
+            fi
+
+            if [[ -z "$LAST_SYNC" ]]; then
+                RAW_TS=$(grep -oP '^[0-9]{12,14}(?=\s+applied:)' "$STATUS_FILE" | tail -n1)
                 if [[ -n "$RAW_TS" ]]; then
                     LAST_SYNC=$(format_timestamp "$RAW_TS")
                 fi
@@ -181,7 +192,7 @@ for HOST in $DEVICES; do
 
         if [[ -z "$LAST_SYNC" && ${#SYNC_FILES[@]} -gt 0 ]]; then
             RAW_TS=$(grep -hEi 'sync' "${SYNC_FILES[@]}" 2>/dev/null | \
-                grep -oP '[0-9]{14}' | tail -n1)
+                grep -oP '[0-9]{12,14}' | tail -n1)
             if [[ -n "$RAW_TS" ]]; then
                 LAST_SYNC=$(format_timestamp "$RAW_TS")
             fi
