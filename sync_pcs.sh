@@ -10,7 +10,7 @@ echo "" >>/var/log/sn.antoniuskolleg.de/sync_pcs.sh
 #
 # wakeonlan Umleitung via Unifi
 #
-PATH=/usr/local/bin/ssh-wol:$PATH
+PATH=/usr/local/lib/linbo-scripts-ak/ssh-wol:$PATH
 
 
 

@@ -1,0 +1,6 @@
+#!/bin/bash
+
+#
+# wakeonlan Umleitung via Unifi
+#
+ssh -i ~/.ssh/id_rsa root@10.0.0.254 "wakeonlan $@"
