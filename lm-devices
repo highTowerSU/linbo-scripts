@@ -110,19 +110,37 @@ else
     FILTER="^(#|$)"
 fi
 
-DEVICES=$(grep -viE "$FILTER" "$CSV" \
+mapfile -t HOSTS < <(grep -viE "$FILTER" "$CSV" \
     | awk -F';' -v room="$ROOM" -v type="$TYPE" '
         !/^#/ && NF {
             if(room!="" && $1!=room) next
             if(type!="" && $10!=type) next
             print $2
-        }')
+        }' \
+    | sort -u)
+
+HOST_COL_WIDTH=0
+for HOST in "${HOSTS[@]}"; do
+    if (( ${#HOST} > HOST_COL_WIDTH )); then
+        HOST_COL_WIDTH=${#HOST}
+    fi
+done
+
+if (( HOST_COL_WIDTH == 0 )); then
+    HOST_COL_WIDTH=1
+fi
 
 # ===============================
 # Ausgabe
 # ===============================
-for HOST in $DEVICES; do
-    OUT_STR="$HOST"
+for HOST in "${HOSTS[@]}"; do
+    HOST_PADDED=$(printf "%-${HOST_COL_WIDTH}s" "$HOST")
+
+    if [[ $SHOW_VERSION -eq 1 || $ONLY_OUTDATED -eq 1 || $SHOW_SYNC -eq 1 ]]; then
+        OUT_STR="$HOST_PADDED"
+    else
+        OUT_STR="$HOST"
+    fi
 
     if [[ $SHOW_VERSION -eq 1 || $ONLY_OUTDATED -eq 1 ]]; then
         LOG_FILE="$LINBO_LOG/${HOST}_image.status"
@@ -141,15 +159,17 @@ for HOST in $DEVICES; do
 
         # Veraltet prüfen & Farbe setzen
         if [[ "$IMAGE_TS_IN_LOG" != "$CURRENT_IMAGE_TIMESTAMP" ]]; then
-            OUT_STR="$HOST | ${RED}${IMAGE_TS_IN_LOG:-"keine info"}${NC}"  # rot für veraltet
+            VERSION_DISPLAY="${RED}${IMAGE_TS_IN_LOG:-"keine info"}${NC}"  # rot für veraltet
         else
-            OUT_STR="$HOST | ${GREEN}${IMAGE_TS_IN_LOG}${NC}"  # grün für aktuell
+            VERSION_DISPLAY="${GREEN}${IMAGE_TS_IN_LOG}${NC}"  # grün für aktuell
         fi
 
         # ONLY_OUTDATED filtern
         if [[ $ONLY_OUTDATED -eq 1 && "$IMAGE_TS_IN_LOG" == "$CURRENT_IMAGE_TIMESTAMP" ]]; then
             continue
         fi
+
+        OUT_STR+=" | $VERSION_DISPLAY"
     fi
 
     if [[ $SHOW_SYNC -eq 1 ]]; then
@@ -219,8 +239,8 @@ for HOST in $DEVICES; do
             fi
         fi
 
-        OUT_STR="$OUT_STR | letzter Sync: $SYNC_DISPLAY"
+        OUT_STR+=" | letzter Sync: $SYNC_DISPLAY"
     fi
 
     echo -e "$OUT_STR"
-done | sort -u
+done
