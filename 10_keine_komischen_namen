@@ -1,0 +1,28 @@
+#!/bin/bash
+# update-linbofs pre hook
+
+echo "### pre hook keine komischen namen ###"
+
+# this script will be executed in the root directory of the linbo filesystem
+
+# copies my script to linbofs
+#myscript="/root/linbofs/myscript.sh"
+#cp "$myscript" usr/bin
+
+
+# Entfernt alle Codenamen nach dem ersten ":" in /etc/linbo-version
+FILE="etc/linbo-version"
+
+if [ ! -f "$FILE" ]; then
+  echo "Datei $FILE nicht gefunden."
+  exit 1
+fi
+
+# Nur die linke Seite (vor dem ":") behalten
+new_line="$(cut -d':' -f1 "$FILE" | xargs)"  # xargs trimmt führende/folgenden Leerzeichen
+
+# direkt zurückschreiben
+echo "$new_line" > "$FILE"
+
+echo "Aktualisiert $FILE:"
+cat "$FILE"

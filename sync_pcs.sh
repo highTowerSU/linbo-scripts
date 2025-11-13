@@ -1,7 +1,7 @@
 #!/bin/bash
 
 LOG_DIR=${LOG_DIR:-/var/log/linbo-scripts}
-LOG_FILE="${LOG_DIR}/sync_pcs.sh"
+LOG_FILE="${LOG_DIR}/sync_pcs.sh.log"
 
 mkdir -p "${LOG_DIR}"
 
@@ -15,7 +15,7 @@ echo "" >>"${LOG_FILE}"
 #
 # wakeonlan Umleitung via Unifi
 #
-PATH=/usr/local/lib/linbo-scripts-ak/ssh-wol:$PATH
+PATH=/usr/local/lib/linbo-scripts/ssh-wol:$PATH
 
 
 
