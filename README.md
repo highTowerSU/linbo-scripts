@@ -19,6 +19,14 @@ Synchronisieren von Rechnergruppen oder das Auswerten der `devices.csv`.
 * `wakeonlan`-Wrapper (z. B. `ssh-wol`) im `PATH`, wenn WOL-Pakete über Unifi gesendet werden
 * Zugriff auf `/etc/linuxmuster/sophomorix/default-school/devices.csv`
 
+## Installation
+cd /usr/local/lib/
+git clone https://github.com/highTowerSU/linbo-scripts/
+cd linbo-scripts
+ln -s /usr/local/lib/linbo-scripts/10_keine_komischen_namen /var/lib/linuxmuster/hooks/update-linbofs.pre.d/10_keine_komischen_namen
+ln -s /usr/local/lib/linbo-scripts/lm-devices /usr/local/sbin/lm-devices
+ln -s /usr/local/lib/linbo-scripts/sync_pcs.sh /usr/local/bin/sync_pcs.sh
+
 ## `sync_pcs.sh`
 
 ### Zweck
