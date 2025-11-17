@@ -23,6 +23,14 @@ PATH=/usr/local/lib/linbo-scripts/ssh-wol:$PATH
 #echo $PATH
 DEFAULT_LINBO_GROUPS=("linux-efi" "linux-efi-p6012")
 LINBO_GROUPS=()
+QUIET_MODE=false
+
+log_info() {
+  echo "$*" >>"${LOG_FILE}"
+  if ! ${QUIET_MODE}; then
+    echo "$*"
+  fi
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -38,9 +46,13 @@ while [[ $# -gt 0 ]]; do
       LINBO_GROUPS+=("${1#*=}")
       shift
       ;;
+    -q|--quiet|--cron)
+      QUIET_MODE=true
+      shift
+      ;;
     *)
       echo "Unbekannte Option: $1" >&2
-      echo "Verwendung: $0 [-g GRUPPE] [--group=GRUPPE]" >&2
+      echo "Verwendung: $0 [-g GRUPPE] [--group=GRUPPE] [--quiet|--cron]" >&2
       exit 1
       ;;
   esac
@@ -60,16 +72,20 @@ if [[ ${#LINBO_GROUPS[@]} -eq 0 ]]; then
   exit 1
 fi
 
-echo "Synchronisiere Gruppen: ${LINBO_GROUPS[*]}" >>"${LOG_FILE}"
-echo "Synchronisiere Gruppen: ${LINBO_GROUPS[*]}"
+log_info "Synchronisiere Gruppen: ${LINBO_GROUPS[*]}"
 
 function linbo-do() {
   local group
   for group in "${LINBO_GROUPS[@]}"; do
-    /usr/sbin/linbo-remote -b 30 -u -g "$group" -w 60 -n -p initcache,sync:1,halt | tee -a "${LOG_FILE}"
+    /usr/sbin/linbo-remote -b 30 -u -g "$group" -w 60 -n -p initcache,sync:1,halt
   done
 }
-linbo-do 2>&1 | grep -E "(-fj-|magic)" #remove Warning
+
+if ${QUIET_MODE}; then
+  linbo-do > >(cat >>"${LOG_FILE}") 2> >(tee -a "${LOG_FILE}" >&2)
+else
+  linbo-do > >(tee -a "${LOG_FILE}") 2> >(tee -a "${LOG_FILE}" >&2) | grep -E "(-fj-|magic)" #remove Warning
+fi
 
 weekday="$(date "+%u")"
 if [ "${weekday}" -lt 6 -a "${weekday}" -gt 1 ]; then
@@ -93,7 +109,12 @@ if [ "${weekday}" -lt 6 -a "${weekday}" -gt 1 ]; then
   done
 
   if [ ${total_hosts_not_synced} -gt 0 ]; then
-    echo "Es wurden ${total_hosts_not_synced} Rechner nicht aktualisiert:"
-    printf '%s' "${hosts_not_synced_output}"
+    if ${QUIET_MODE}; then
+      log_info "Es wurden ${total_hosts_not_synced} Rechner nicht aktualisiert:"
+      printf '%s' "${hosts_not_synced_output}" | tee -a "${LOG_FILE}"
+    else
+      echo "Es wurden ${total_hosts_not_synced} Rechner nicht aktualisiert:"
+      printf '%s' "${hosts_not_synced_output}"
+    fi
   fi
 fi
