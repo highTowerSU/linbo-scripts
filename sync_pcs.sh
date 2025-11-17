@@ -66,7 +66,7 @@ echo "Synchronisiere Gruppen: ${LINBO_GROUPS[*]}"
 function linbo-do() {
   local group
   for group in "${LINBO_GROUPS[@]}"; do
-    /usr/sbin/linbo-remote -b 30 -u -g "$group" -w 60 -n -p initcache,sync:1,halt,halt | tee -a "${LOG_FILE}"
+    /usr/sbin/linbo-remote -b 30 -u -g "$group" -w 60 -n -p initcache,sync:1,halt | tee -a "${LOG_FILE}"
   done
 }
 linbo-do 2>&1 | grep -E "(-fj-|magic)" #remove Warning
